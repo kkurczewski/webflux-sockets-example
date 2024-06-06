@@ -37,7 +37,7 @@ fun main() {
     }
 }
 
-private val messageHandler = WebSocketHandler { session ->
+private val messageHandler = CoroutineWebSocketHandler { session ->
     val passiveRequests = flow {
         emit("hello")
         repeat(5) {
@@ -53,7 +53,7 @@ private val messageHandler = WebSocketHandler { session ->
         LOG.info("Received: {}", it.payloadAsText)
     }
 
-    merge(requests, responses).asFlux().then()
+    merge(requests, responses)
 }
 
 private val messageHandlerJ = WebSocketHandler { session ->
@@ -69,8 +69,14 @@ private val messageHandlerJ = WebSocketHandler { session ->
     Flux.merge(requests, responses).then()
 }
 
-private fun WebSocketSession.send(messages: Flux<String>) = this.send(messages.map { this.textMessage(it) })
+fun interface CoroutineWebSocketHandler : WebSocketHandler {
+    fun coHandle(session: WebSocketSession): Flow<Any>
 
-private fun WebSocketSession.send(messages: Flow<String>) = this.send(messages.asFlux()).asFlow()
+    override fun handle(session: WebSocketSession): Mono<Void> = coHandle(session).asFlux().then()
+}
 
-private fun WebSocketSession.messages() = this.receive().asFlow()
+fun WebSocketSession.send(messages: Flux<String>): Mono<Void> = this.send(messages.map { this.textMessage(it) })
+
+fun WebSocketSession.send(messages: Flow<String>) = this.send(messages.asFlux()).asFlow()
+
+fun WebSocketSession.messages() = this.receive().asFlow()
