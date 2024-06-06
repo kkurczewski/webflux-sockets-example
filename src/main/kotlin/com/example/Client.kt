@@ -3,12 +3,14 @@ package com.example
 import kotlinx.coroutines.CompletableJob
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.mapNotNull
 import kotlinx.coroutines.flow.merge
-import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import org.slf4j.LoggerFactory
 import org.springframework.web.reactive.socket.CloseStatus.NORMAL
+import org.springframework.web.reactive.socket.WebSocketHandler
 import org.springframework.web.reactive.socket.WebSocketMessage
 import org.springframework.web.reactive.socket.client.ReactorNettyWebSocketClient
 import reactor.core.publisher.Flux
@@ -17,7 +19,6 @@ import java.io.IOException
 import java.net.URI
 import kotlin.time.Duration.Companion.seconds
 import com.example.CoroutineWebSocketHandler as handler
-import com.example.WebSocketHandler1 as handler1
 
 private const val ENDPOINT = "ws://localhost:9000/echo"
 private val LOG = LoggerFactory.getLogger(Client::class.java)
@@ -28,7 +29,7 @@ class Client
 
 fun main() {
     try {
-        client.execute(URI.create(ENDPOINT), messageHandlerJ).block()
+        client.execute(URI.create(ENDPOINT), messageHandler).block()
     } catch (ex: IOException) {
         LOG.error("Failed due: {}", ex.message)
     } finally {
@@ -48,28 +49,34 @@ private val messageHandler = handler { session ->
         session.close(NORMAL).awaitSingleOrNull()
     }
 
-    val requests = session.send(passiveRequests)
-    val responses = session.messages().onEach { handleMessage(it, job) }
-
-    merge(requests, responses)
+    val responses = session.messages().mapNotNull { handleMessage(it, job) }
+    merge(passiveRequests, responses)
+        .catch { it.printStackTrace() }
+        .let { session.send(it) }
 }
 
-private val messageHandlerJ = handler1 { session ->
+private val messageHandlerJ = WebSocketHandler { session ->
     val job = Job()
     val greet = Mono.just("hello")
     val pings = Flux.just("ping").repeat { job.isActive }.delayElements(1.seconds)
     val bye = session.close(NORMAL).delaySubscription(5.seconds)
 
-    val requests = session.send(greet.concatWith(pings)).then(bye)
-    val responses = session.receive().doOnNext { handleMessage(it, job) }
+    val passiveRequests = greet.concatWith(pings)
+    val responses = session.receive().mapNotNullKt { handleMessage(it, job) }
 
-    Flux.merge(requests, responses)
+    Flux.merge(passiveRequests, responses)
+        .doOnError { it.printStackTrace() }
+        .let { session.send(it) }
+        .then(bye)
 }
 
-private fun handleMessage(message: WebSocketMessage, job: CompletableJob) {
+private fun handleMessage(message: WebSocketMessage, job: CompletableJob): String? {
     val payload = message.payloadAsText
+    LOG.info("Received: {}", payload)
+
     if (payload == "STOP") {
         job.complete()
+        return "OK"
     }
-    LOG.info("Received: {}", payload)
+    return null
 }

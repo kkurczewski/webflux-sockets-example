@@ -16,12 +16,6 @@ fun interface CoroutineWebSocketHandler : WebSocketHandler {
     override fun handle(session: WebSocketSession): Mono<Void> = coHandle(session).asFlux().then()
 }
 
-fun interface WebSocketHandler1 : WebSocketHandler {
-    fun handle1(session: WebSocketSession): Flux<Any>
-
-    override fun handle(session: WebSocketSession): Mono<Void> = handle1(session).then()
-}
-
 fun WebSocketSession.send(messages: Flux<String>): Mono<Void> = this.send(messages.map { this.textMessage(it) })
 
 fun WebSocketSession.send(messages: Flow<String>) = this.send(messages.asFlux()).asFlow()
@@ -31,3 +25,7 @@ fun WebSocketSession.messages() = this.receive().asFlow()
 fun <T> Flux<T>.delayElements(duration: Duration): Flux<T> = this.delayElements(duration.toJavaDuration())
 
 fun <T> Mono<T>.delaySubscription(duration: Duration): Mono<T> = this.delaySubscription(duration.toJavaDuration())
+
+inline fun <T, reified U : Any> Flux<T>.mapNotNullKt(
+    crossinline transform: (T) -> U?,
+): Flux<U> = this.mapNotNull { transform(it) }.cast(U::class.java)
