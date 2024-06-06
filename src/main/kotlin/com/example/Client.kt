@@ -16,7 +16,6 @@ import java.io.IOException
 import java.net.URI
 import kotlin.time.Duration.Companion.seconds
 import com.example.CoroutineWebSocketHandler as handler
-import kotlin.time.toJavaDuration as java
 
 private const val ENDPOINT = "ws://localhost:9000/echo"
 private val LOG = LoggerFactory.getLogger(Client::class.java)
@@ -62,8 +61,8 @@ private val messageHandler = handler { session ->
 private val messageHandlerJ = WebSocketHandler { session ->
     val job = Job()
     val greet = Mono.just("hello")
-    val pings = Flux.just("ping").repeat { job.isActive }.delayElements(1.seconds.java())
-    val bye = session.close(NORMAL).delaySubscription(5.seconds.java())
+    val pings = Flux.just("ping").repeat { job.isActive }.delayElements(1.seconds)
+    val bye = session.close(NORMAL).delaySubscription(5.seconds)
 
     val requests = session.send(greet.concatWith(pings)).then(bye)
     val responses = session.receive().doOnNext {

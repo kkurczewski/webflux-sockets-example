@@ -19,7 +19,6 @@ import org.springframework.web.bind.annotation.PostMapping
 import org.springframework.web.bind.annotation.RestController
 import org.springframework.web.reactive.handler.SimpleUrlHandlerMapping
 import kotlin.time.Duration.Companion.seconds
-import kotlin.time.toJavaDuration
 
 @SpringBootApplication
 class Server
@@ -54,7 +53,7 @@ class WebConfig {
             .receive()
             .map { it.payloadAsText }
             .doOnNext { LOG.info("Received: {}", it) }
-            .delayElements(1.seconds.toJavaDuration())
+            .delayElements(1.seconds)
             .map { it.uppercase() }
             .asFlow()
 
