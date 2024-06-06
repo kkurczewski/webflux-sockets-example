@@ -1,15 +1,14 @@
 package com.example
 
-import com.example.utils.monoBridge
-import com.example.utils.onEachMessage
-import com.example.utils.sendText
+import org.slf4j.LoggerFactory
 import org.springframework.boot.SpringApplication
 import org.springframework.boot.autoconfigure.SpringBootApplication
 import org.springframework.context.annotation.Bean
 import org.springframework.context.annotation.Configuration
 import org.springframework.web.reactive.handler.SimpleUrlHandlerMapping
 import org.springframework.web.reactive.socket.WebSocketHandler
-import org.springframework.web.reactive.socket.WebSocketSession
+import kotlin.time.Duration.Companion.seconds
+import kotlin.time.toJavaDuration
 
 @SpringBootApplication
 class Server
@@ -18,20 +17,23 @@ fun main() {
     SpringApplication.run(Server::class.java)
 }
 
+private val LOG = LoggerFactory.getLogger(Server::class.java)
+
 @Configuration
 class WebConfig {
     @Bean
     fun handlerMapping() = SimpleUrlHandlerMapping(mapOf(
-        "/echo" to EchoHandler()
+        "/echo" to messageHandler
     ), -1)
-}
 
-class EchoHandler : WebSocketHandler {
-    override fun handle(session: WebSocketSession) = monoBridge {
-        session.onEachMessage {
-            val payloadAsText = it.payloadAsText
-            println("Client sent: $payloadAsText")
-            session.sendText(payloadAsText.uppercase())
-        }
+    private val messageHandler = WebSocketHandler { session ->
+        session
+            .receive()
+            .doOnNext { LOG.info("Received: {}", it.payloadAsText) }
+            .map { it.payloadAsText.uppercase() }
+            .delayElements(1.seconds.toJavaDuration())
+            .map { session.textMessage(it) }
+            .doOnError { it.printStackTrace() }
+            .let { session.send(it) }
     }
 }
