@@ -16,6 +16,12 @@ fun interface CoroutineWebSocketHandler : WebSocketHandler {
     override fun handle(session: WebSocketSession): Mono<Void> = coHandle(session).asFlux().then()
 }
 
+fun interface WebSocketHandler1 : WebSocketHandler {
+    fun handle1(session: WebSocketSession): Flux<Any>
+
+    override fun handle(session: WebSocketSession): Mono<Void> = handle1(session).then()
+}
+
 fun WebSocketSession.send(messages: Flux<String>): Mono<Void> = this.send(messages.map { this.textMessage(it) })
 
 fun WebSocketSession.send(messages: Flow<String>) = this.send(messages.asFlux()).asFlow()
