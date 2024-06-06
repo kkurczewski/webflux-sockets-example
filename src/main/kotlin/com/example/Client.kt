@@ -1,23 +1,21 @@
 package com.example
 
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.merge
 import kotlinx.coroutines.flow.onEach
-import kotlinx.coroutines.reactive.asFlow
-import kotlinx.coroutines.reactor.asFlux
 import kotlinx.coroutines.reactor.awaitSingleOrNull
 import org.slf4j.LoggerFactory
 import org.springframework.web.reactive.socket.CloseStatus.NORMAL
 import org.springframework.web.reactive.socket.WebSocketHandler
-import org.springframework.web.reactive.socket.WebSocketSession
 import org.springframework.web.reactive.socket.client.ReactorNettyWebSocketClient
 import reactor.core.publisher.Flux
 import reactor.core.publisher.Mono
 import java.io.IOException
 import java.net.URI
 import kotlin.time.Duration.Companion.seconds
+import com.example.CoroutineWebSocketHandler as handler
 import kotlin.time.toJavaDuration as java
 
 private const val ENDPOINT = "ws://localhost:9000/echo"
@@ -29,7 +27,7 @@ class Client
 
 fun main() {
     try {
-        client.execute(URI.create(ENDPOINT), messageHandler).block()
+        client.execute(URI.create(ENDPOINT), messageHandlerJ).block()
     } catch (ex: IOException) {
         LOG.error("Failed due: {}", ex.message)
     } finally {
@@ -37,11 +35,12 @@ fun main() {
     }
 }
 
-private val messageHandler = CoroutineWebSocketHandler { session ->
+private val messageHandler = handler { session ->
+    val job = Job()
     val passiveRequests = flow {
         emit("hello")
-        repeat(5) {
-            emit("ping${it + 1}")
+        while (job.isActive) {
+            emit("ping")
             delay(1.seconds)
         }
         delay(5.seconds)
@@ -50,33 +49,30 @@ private val messageHandler = CoroutineWebSocketHandler { session ->
 
     val requests = session.send(passiveRequests)
     val responses = session.messages().onEach {
-        LOG.info("Received: {}", it.payloadAsText)
+        val message = it.payloadAsText
+        if (message == "STOP") {
+            job.complete()
+        }
+        LOG.info("Received: {}", message)
     }
 
     merge(requests, responses)
 }
 
 private val messageHandlerJ = WebSocketHandler { session ->
+    val job = Job()
     val greet = Mono.just("hello")
-    val pings = Flux.interval(1.seconds.java()).map { "ping${it + 1}" }.take(5)
+    val pings = Flux.just("ping").repeat { job.isActive }.delayElements(1.seconds.java())
     val bye = session.close(NORMAL).delaySubscription(5.seconds.java())
 
     val requests = session.send(greet.concatWith(pings)).then(bye)
     val responses = session.receive().doOnNext {
-        LOG.info("Received: {}", it.payloadAsText)
+        val message = it.payloadAsText
+        if (message == "STOP") {
+            job.complete()
+        }
+        LOG.info("Received: {}", message)
     }
 
     Flux.merge(requests, responses).then()
 }
-
-fun interface CoroutineWebSocketHandler : WebSocketHandler {
-    fun coHandle(session: WebSocketSession): Flow<Any>
-
-    override fun handle(session: WebSocketSession): Mono<Void> = coHandle(session).asFlux().then()
-}
-
-fun WebSocketSession.send(messages: Flux<String>): Mono<Void> = this.send(messages.map { this.textMessage(it) })
-
-fun WebSocketSession.send(messages: Flow<String>) = this.send(messages.asFlux()).asFlow()
-
-fun WebSocketSession.messages() = this.receive().asFlow()
