@@ -7,7 +7,9 @@ import kotlinx.coroutines.channels.Channel.Factory.RENDEZVOUS
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.flow.consumeAsFlow
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.merge
+import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.reactive.asFlow
 import org.slf4j.LoggerFactory
@@ -44,18 +46,18 @@ class WebConfig {
     }
 
     @OptIn(DelicateCoroutinesApi::class)
-    private val messageHandler = CoroutineWebSocketHandler { session ->
+    private val messageHandler = handler { session ->
         GlobalScope.launch {
-            delay(3.seconds)
+            delay(7.seconds)
             commands.send("some command from upstream")
         }
         val responses = session
             .receive()
             .map { it.payloadAsText }
             .doOnNext { LOG.info("Received: {}", it) }
-            .delayElements(1.seconds)
-            .map { it.uppercase() }
             .asFlow()
+            .map { it.uppercase() }
+            .onEach { delay(2.seconds) }
 
         merge(responses, commands.consumeAsFlow())
             .catch { it.printStackTrace() }

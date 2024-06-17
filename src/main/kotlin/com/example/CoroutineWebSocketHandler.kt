@@ -1,31 +1,15 @@
 package com.example
 
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.reactive.asFlow
 import kotlinx.coroutines.reactor.asFlux
+import kotlinx.coroutines.reactor.mono
 import org.springframework.web.reactive.socket.WebSocketHandler
 import org.springframework.web.reactive.socket.WebSocketSession
-import reactor.core.publisher.Flux
-import reactor.core.publisher.Mono
-import kotlin.time.Duration
-import kotlin.time.toJavaDuration
 
-fun interface CoroutineWebSocketHandler : WebSocketHandler {
-    fun coHandle(session: WebSocketSession): Flow<Any>
+fun handler(block: (WebSocketSession) -> Flow<*>) = WebSocketHandler { mono { block(it).collect() }.then() }
 
-    override fun handle(session: WebSocketSession): Mono<Void> = coHandle(session).asFlux().then()
-}
-
-fun WebSocketSession.send(messages: Flux<String>): Mono<Void> = this.send(messages.map { this.textMessage(it) })
-
-fun WebSocketSession.send(messages: Flow<String>) = this.send(messages.asFlux()).asFlow()
+fun WebSocketSession.send(messages: Flow<String>): Flow<*> = this.send(messages.asFlux().map { this.textMessage(it) }).asFlow()
 
 fun WebSocketSession.messages() = this.receive().asFlow()
-
-fun <T> Flux<T>.delayElements(duration: Duration): Flux<T> = this.delayElements(duration.toJavaDuration())
-
-fun <T> Mono<T>.delaySubscription(duration: Duration): Mono<T> = this.delaySubscription(duration.toJavaDuration())
-
-inline fun <T, reified U : Any> Flux<T>.mapNotNullKt(
-    crossinline transform: (T) -> U?,
-): Flux<U> = this.mapNotNull { transform(it) }.cast(U::class.java)
